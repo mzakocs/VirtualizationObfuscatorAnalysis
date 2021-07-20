@@ -65,7 +65,11 @@ class InstructionSwapPlugin(idaapi.plugin_t):
         for i in range(0, n):
             temp_instruction = ida_ua.insn_t()
             idaapi.decode_insn(temp_instruction, address)
-            address += temp_instruction.size
+            # Just incase instruction size is 0 due to an invalid instruction
+            if temp_instruction.size == 0:
+                address += 1
+            else:
+                address += temp_instruction.size
             instruction_array.append(temp_instruction)
         return instruction_array
         
@@ -89,6 +93,8 @@ class InstructionSwapPlugin(idaapi.plugin_t):
                 idc.patch_byte(byte, nop)
         # Hides all of the nops
         self.hide_range((self.address + newInstructionSize), (self.address + block_size))
+        # Sets new address location to after the patched instructions
+        self.address += block_size
     
     
     # Instruction Deobfuscators
@@ -185,6 +191,7 @@ class InstructionSwapPlugin(idaapi.plugin_t):
         # Undefine the instructions here so we can modify them
         ida_bytes.del_items(self.start_address)
         # Loops through each instruction until we hit jmp or call
+        i = 0
         while(True):
             # Grabs info about the following instructions
             self.ins = self.get_instruction_array(10, self.address)
@@ -197,18 +204,19 @@ class InstructionSwapPlugin(idaapi.plugin_t):
                             success = self.mov_add_8_rsp_to_pop()
                 elif self.ins[0].get_canon_mnem() == 'push':
                     if self.ins[1].get_canon_mnem() == 'mov':
-                        if len(self.ins) >= 3:
+                        if len(self.ins) > 3:
                             if self.ins[3].get_canon_mnem() == 'xor':
                                 success == self.xor_swap_to_add_8_rsp()
                             elif self.ins[3].get_canon_mnem() == 'xchg':
                                 success == self.xchg_swap_to_add_8_rsp()
                         if self.ins[0].Op1.type == 5: # immediate value
                             success == self.push_iv_mov_register_to_push_register()
-                # Break the loop once we hit a jmp or call instruction
-                elif self.ins[0].get_canon_mnem() == 'jmp' or self.ins[0].get_canon_mnem() == 'call':
-                    break
+
             except Exception as e:
                 print("Something went wrong: " + str(e))
+                break
+            # Break the loop once we hit a jmp or call instruction
+            if self.ins[0].get_canon_mnem() == 'jmp' or self.ins[0].get_canon_mnem() == 'call':
                 break
             # Set the current address to the next instruction
             self.address = self.ins[1].ea
@@ -217,8 +225,8 @@ class InstructionSwapPlugin(idaapi.plugin_t):
                 print("Succesfully deobfuscated the instruction(s)!")
                 print("Start Address: " + hex(self.address))
                 print("End Address: " + hex(self.end_address))
-            else:
-                print("Could not deobfuscate instruction(s)!")
+            print(self.ins[0].ea)
+            print(self.ins[0].get_canon_mnem())
         # Redefines the instructions where the patch was performed
         ida_ua.create_insn(self.start_address)
 
